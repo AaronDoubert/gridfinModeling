@@ -4,6 +4,10 @@ Parametric grid-fin generator: a live 2D preview GUI, a lattice solver that alwa
 
 ![GUI](docs/gui.png)
 
+A step-by-step pass through the window, with the numbers each preset produces and
+a look at the exported solid, is in **[docs/walkthrough.md](docs/walkthrough.md)**.
+Notes on the interface itself are in [docs/gui-notes.md](docs/gui-notes.md).
+
 ## Install & run
 
 ```bash
@@ -17,9 +21,9 @@ On Linux you may also need Qt's system libraries (`libegl1 libgl1 libxkbcommon0`
 
 1. Pick a **preset**, or type in **span b**, **target height h** and **chord c**.
 2. Size the lattice by **cells across span** (spin it up and down) or by a **target pitch w**.
-3. Pick **web** and **frame** thickness from the stock-size dropdowns: metric plate in mm, imperial plate as inch fractions, or **Custom...**.
+3. Pick **web** and **frame** thickness from the stock-size dropdowns: metric plate in mm, imperial plate as inch fractions, or **Custom...**, which opens a millimetre box beside the dropdown.
 4. Choose **Chamfer** or **Square** corners.
-5. The preview updates as you type. The readout shows the snapped height, c/w, t/c, 2t/w, open area, S_ref and mass. Partial cells are coloured: edge half-cells and corner quarter-cells. Any irregular cell would show red, and by construction none should appear.
+5. The preview updates as you type. The readout shows the snapped height, c/w, t/c, 2t/w, open area, S_ref and mass, and confirms the lattice is clean. Partial cells are coloured: edge half-cells and corner quarter-cells. Any irregular cell would show red, and by construction none should appear.
 6. The **Nearby fits** table lists neighbouring cell counts and how far the height would move for each. The green row is the one closest to your target height. Double-click a row to use it.
 7. **Generate STEP** writes the files to the chosen folder. **Save design** stores the inputs as `designs/<name>.json`, and saved designs appear in the preset dropdown.
 
@@ -55,6 +59,15 @@ Chamfered fins use an even row count M, so the top and bottom match. For square 
 | `<name>_planform.dxf` | 2D y-z section in metres, on layers FRAME_OUTER / FRAME_INNER / CELLS |
 | `<name>.json` | inputs, solved lattice (J, M, w, h, phase, chamfer q) and dimensionless groups |
 
+The fin is one planar face - the frame wire plus every cell as an inner wire -
+extruded along the chord, so no 3D booleans are involved and the solid comes out
+valid every time. An example set is recorded in
+[docs/example-export/baseline.json](docs/example-export/baseline.json); the STEP
+files themselves are not in the repository, because `python -m gridfin export`
+rebuilds them in about three seconds.
+
+![Exported fin](docs/images/fin-iso.png)
+
 Frame: x = chord / flow direction, y = span = hinge axis, z = height, with the origin at the planform centre and mid-chord. The α/β/Mach sweep needs no new geometry; you rotate the inlet velocity vector in Fluent instead. Face names don't survive STEP, so assign inlet, outlet, farfield, symmetry and wall by location in Fluent Meshing.
 
 ## Command line
@@ -77,4 +90,5 @@ gridfin/gui.py       PySide6 window
 gridfin/plot.py      matplotlib preview (GUI + CLI)
 gridfin/presets.*    stock thicknesses, materials, built-in designs
 tests/               pytest
+docs/                walkthrough, interface notes, screenshot script
 ```
