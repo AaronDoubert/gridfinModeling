@@ -1,0 +1,6 @@
+cadquery>=2.4
+shapely>=2.0
+PySide6>=6.5
+matplotlib>=3.7
+ezdxf>=1.0
+pytest
