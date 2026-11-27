@@ -59,7 +59,7 @@ def draw(ax, lay: Layout, centerlines=False, dims=True, highlight=True, dark=Fal
                     arrowprops=dict(arrowstyle="<->", color=fg, lw=0.8))
         ax.text(-hb - off * 1.3, 0, f"h = {lay.h:.3f} m  (target {sp.h:.3f}, {lay.dh*1000:+.0f} mm)",
                 ha="center", va="center", fontsize=8, color=fg, rotation=90)
-    m = 0.25 * max(sp.b, lay.h)
+    m = (0.18 if dims else 0.06) * max(sp.b, lay.h)   # room for the dimension arrows
     ax.set_xlim(-hb - m, hb + m)
     ax.set_ylim(-hh - m, hh + m)
     ax.set_aspect("equal")

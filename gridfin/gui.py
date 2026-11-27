@@ -9,6 +9,7 @@ Export runs in a background thread so the window stays responsive.
 """
 from __future__ import annotations
 
+import html
 import sys
 import traceback
 from dataclasses import replace
@@ -31,6 +32,14 @@ from .lattice import FinSpec, solve, fit_table
 from .plot import draw, KIND_COLOR
 
 CUSTOM = "Custom..."
+SIZE_LABELS = ("Cells across span", "Target pitch w")
+
+
+class PreviewToolbar(NavigationToolbar2QT):
+    """Pan/zoom/save only - the preview has one auto-fitted axes, so the
+    subplot-layout and curve-style editors do nothing useful here."""
+    toolitems = [t for t in NavigationToolbar2QT.toolitems
+                 if t[0] not in ("Subplots", "Customize")]
 
 
 def _dspin(lo, hi, step, dec, suffix=""):
@@ -60,6 +69,7 @@ class ThicknessPicker(QWidget):
         self.combo.addItem(CUSTOM)
         self.spin = _dspin(0.1, 500, 0.5, 2, " mm")
         self.spin.setMaximumWidth(110)
+        self.spin.setVisible(False)          # only shown for CUSTOM
         lay.addWidget(self.combo, 1)
         lay.addWidget(self.spin)
         self.combo.currentIndexChanged.connect(self._on_combo)
@@ -68,7 +78,7 @@ class ThicknessPicker(QWidget):
     def _on_combo(self, _):
         text = self.combo.currentText()
         custom = text == CUSTOM
-        self.spin.setEnabled(custom)
+        self.spin.setVisible(custom)
         if not custom:
             for label, m in self.options:
                 if label == text:
@@ -84,12 +94,8 @@ class ThicknessPicker(QWidget):
         self.blockSignals(True)
         self.combo.blockSignals(True)
         idx = next((i for i, (_, v) in enumerate(self.options) if abs(v - m) < 1e-7), None)
-        if idx is None:
-            self.combo.setCurrentText(CUSTOM)
-            self.spin.setEnabled(True)
-        else:
-            self.combo.setCurrentText(self.options[idx][0])
-            self.spin.setEnabled(False)
+        self.combo.setCurrentText(CUSTOM if idx is None else self.options[idx][0])
+        self.spin.setVisible(idx is None)
         self.spin.blockSignals(True)
         self.spin.setValue(m * 1000)
         self.spin.blockSignals(False)
@@ -182,12 +188,15 @@ class MainWindow(QMainWindow):
         self.size_stack.addWidget(self.n_span)
         self.size_stack.addWidget(self.pitch)
         self.sizing.currentIndexChanged.connect(self.size_stack.setCurrentIndex)
-        self.theta = _dspin(20, 70, 1, 1, " deg")
+        self.size_label = QLabel(SIZE_LABELS[0])
+        self.sizing.currentIndexChanged.connect(
+            lambda i: self.size_label.setText(SIZE_LABELS[i]))
+        self.theta = _dspin(20, 70, 1, 1, "\u00b0")
         self.phase = QComboBox()
         self.phase.addItems(["Auto", "Webs into bottom corners", "Cells in bottom corners"])
         self.tb_mirror = QCheckBox("Mirror top/bottom (coarser height snap)")
         f.addRow("Size by", self.sizing)
-        f.addRow("", self.size_stack)
+        f.addRow(self.size_label, self.size_stack)
         f.addRow("Web angle", self.theta)
         f.addRow("Phase", self.phase)
         f.addRow(self.tb_mirror)
@@ -214,7 +223,7 @@ class MainWindow(QMainWindow):
         f = QFormLayout(g)
         self.material = QComboBox()
         for name, rho in self.materials.items():
-            self.material.addItem(f"{name}  ({rho:g} kg/m3)", name)
+            self.material.addItem(f"{name}  ({rho:g} kg/m\u00b3)", name)
         self.x_h = _dspin(-10, 10, 0.01, 3, " m")
         self.z_h = _dspin(-10, 10, 0.01, 3, " m")
         f.addRow("Material", self.material)
@@ -291,9 +300,9 @@ class MainWindow(QMainWindow):
         for cb in (self.cb_cl, self.cb_dims, self.cb_hl):
             cb.toggled.connect(self._redraw)
             bar.addWidget(cb)
-        legend = QLabel(" ".join(
-            f'<span style="background:{KIND_COLOR[k]}">&nbsp;&nbsp;&nbsp;</span> {k}'
-            for k in ("edge", "corner")))
+        legend = QLabel('<span style="color:#666">partial cells:</span> ' + " ".join(
+            f'<span style="background:{KIND_COLOR[k]}">&nbsp;&nbsp;&nbsp;</span> {name}'
+            for k, name in (("edge", "edge (half)"), ("corner", "corner (quarter)"))))
         bar.addStretch(1)
         bar.addWidget(legend)
         v.addLayout(bar)
@@ -301,7 +310,7 @@ class MainWindow(QMainWindow):
         self.fig = Figure(figsize=(7, 6), dpi=100)   # explicit: some rc files set 200
         self.ax = self.fig.add_subplot(111)
         self.canvas = FigureCanvasQTAgg(self.fig)
-        v.addWidget(NavigationToolbar2QT(self.canvas, self))
+        v.addWidget(PreviewToolbar(self.canvas, self))
         v.addWidget(self.canvas, 1)
 
         bottom = QHBoxLayout()
@@ -314,14 +323,19 @@ class MainWindow(QMainWindow):
         fits = QVBoxLayout()
         fits.addWidget(QLabel("<b>Nearby fits</b> (double-click to use)"))
         self.fit = QTableWidget(0, 4)
-        self.fit.setHorizontalHeaderLabels(["cells", "w [mm]", "h [m]", "dh [mm]"])
+        self.fit.setHorizontalHeaderLabels(["cells", "w [mm]", "h [m]", "\u0394h [mm]"])
         self.fit.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.fit.verticalHeader().setVisible(False)
+        self.fit.verticalHeader().setDefaultSectionSize(20)
+        self.fit.setMinimumHeight(206)        # all nine candidates, no scrolling
         self.fit.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.fit.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.fit.cellDoubleClicked.connect(self._use_fit)
         self.fit.setMinimumWidth(300)
         fits.addWidget(self.fit)
+        fits.addWidget(QLabel(
+            '<span style="color:#666"><b>bold</b> = current &nbsp; '
+            '<span style="color:#117a30">green</span> = closest to the target height</span>'))
         bottom.addLayout(fits, 2)
         v.addLayout(bottom)
         return w
@@ -370,24 +384,44 @@ class MainWindow(QMainWindow):
 
     def refresh(self):
         s = self.spec()
+        self.setWindowTitle(f"Grid fin generator \u2014 {s.name}")
         chamfer = s.corner == "chamfer"
         self.chamfer.setEnabled(chamfer)
+        self.chamfer.setToolTip("" if chamfer else "Only used with chamfered corners")
         self.tb_mirror.setEnabled(not chamfer)
-        if chamfer:
-            self.tb_mirror.setToolTip("Always on with chamfers so all four corners match")
+        self.tb_mirror.setToolTip(
+            "Always on with chamfers so all four corners match" if chamfer else
+            "Make the top and bottom rows identical; the height then snaps in whole "
+            "cells instead of half cells")
         try:
             self.lay = solve(s)
-        except ValueError as e:
-            self.lay = None
-            self.readout.setText(f'<span style="color:#c0392b"><b>Invalid:</b> {e}</span>')
-            self.ax.clear()
-            self.canvas.draw_idle()
-            self.export_btn.setEnabled(False)
+        except Exception as e:                  # a slot that raises would kill the app
+            self._show_invalid(str(e) or type(e).__name__)
             return
         self.export_btn.setEnabled(True)
         self._redraw()
         self._update_readout()
         self._update_fits(s)
+        self.statusBar().showMessage(
+            f"{self.lay.J} cells, w = {self.lay.w*1000:.1f} mm, "
+            f"h = {self.lay.h:.3f} m ({self.lay.dh*1000:+.0f} mm)")
+
+    def _show_invalid(self, msg):
+        """No solution for these inputs: say so in the preview, not with an empty plot."""
+        self.lay = None
+        self.readout.setText(
+            '<b style="color:#c0392b">This design has no clean lattice</b><br>'
+            f'<span style="color:#c0392b">{html.escape(msg)}</span><br>'
+            '<span style="color:#666">Adjust an input on the left - the preview returns '
+            'as soon as the lattice fits.</span>')
+        self.ax.clear()
+        self.ax.set_axis_off()
+        self.ax.text(0.5, 0.5, msg, ha="center", va="center", wrap=True,
+                     fontsize=10, color="#c0392b", transform=self.ax.transAxes)
+        self.canvas.draw_idle()
+        self.fit.setRowCount(0)                 # stale rows would be misleading
+        self.export_btn.setEnabled(False)
+        self.statusBar().showMessage(f"no clean lattice: {msg}")
 
     def _redraw(self, *_):
         if self.lay is None:
@@ -398,26 +432,39 @@ class MainWindow(QMainWindow):
         self.canvas.draw_idle()
 
     def _update_readout(self):
+        """One label-per-line table: the numbers line up and scan top to bottom."""
         L, m, s = self.lay, self.lay.metrics, self.lay.spec
-        k = m["cell_counts"]
-        ch = ""
+        k, gap = m["cell_counts"], "&nbsp;&nbsp;&nbsp;"
+        rows = [
+            ("Lattice", f"<b>{L.J}</b> cells across the span &times; {L.M} half-rows"
+                        f"{gap}min cell angle {m['min_cell_angle_deg']:.1f}&deg;"),
+            ("Pitch", f"w = <b>{L.w*1000:.1f} mm</b> perpendicular"
+                      f"{gap}{L.py*1000:.1f} mm along the span"),
+            ("Height", f"<b>{L.h:.3f} m</b>{gap}target {s.h:.3f} m,"
+                       f" snapped {L.dh*1000:+.0f} mm"),
+        ]
         if s.corner == "chamfer":
-            ch = f"chamfer leg (outer): {m['chamfer_outer_leg_bottom_m']*1000:.0f} mm  (target {s.chamfer*1000:.0f})<br>"
-        warn = "".join(f'<br><span style="color:#c0392b">&#9888; {x}</span>' for x in L.warnings)
-        ok = ('<span style="color:#1e8449">clean: 0 irregular cells, mirror-symmetric about y=0</span>'
-              if k["other"] == 0 and m["symmetry_error"] < 1e-9 else
-              '<span style="color:#c0392b">NOT clean</span>')
+            rows.append(("Chamfer", f"{m['chamfer_outer_leg_bottom_m']*1000:.0f} mm outer leg"
+                                    f"{gap}target {s.chamfer*1000:.0f} mm"))
+        rows += [
+            ("Cells", f"{m['n_cells']} = {k['full']} full + {k['edge']} edge"
+                      f" + {k['corner']} corner"),
+            ("Ratios", f"c/w {m['c_over_w']:.3f}{gap}t/c {m['t_over_c']:.4f}"
+                       f"{gap}2t/w {m['solidity_approx_2t_over_w']:.4f}"
+                       f"{gap}open area {m['open_area_ratio']:.1%}"),
+            ("Size", f"S_ref {m['S_ref_m2']:.3f} m&sup2;"
+                     f"{gap}mass {m['mass_kg']:.0f} kg ({s.material})"),
+        ]
+        body = "".join(f'<tr><td style="color:#666; padding-right:14px">{a}</td>'
+                       f"<td>{b}</td></tr>" for a, b in rows)
+        clean = k["other"] == 0 and m["symmetry_error"] < 1e-9
+        status = ('<span style="color:#1e8449">&#10003; clean: 0 irregular cells, '
+                  'mirror-symmetric about y = 0</span>' if clean else
+                  '<span style="color:#c0392b">&#10007; NOT clean</span>')
+        warn = "".join(f'<br><span style="color:#c0392b">&#9888; {html.escape(x)}</span>'
+                       for x in L.warnings)
         self.readout.setText(
-            f"<b>{L.J}</b> cells across span, {L.M} half-rows &nbsp;|&nbsp; "
-            f"pitch w = <b>{L.w*1000:.1f} mm</b> (perp.), {L.py*1000:.1f} mm along span<br>"
-            f"height: <b>{L.h:.3f} m</b> (target {s.h:.3f}, snapped {L.dh*1000:+.0f} mm)<br>"
-            f"{ch}"
-            f"cells: {m['n_cells']} = {k['full']} full + {k['edge']} edge + {k['corner']} corner &nbsp;|&nbsp; "
-            f"min angle {m['min_cell_angle_deg']:.1f} deg<br>"
-            f"c/w = {m['c_over_w']:.3f} &nbsp; t/c = {m['t_over_c']:.4f} &nbsp; "
-            f"2t/w = {m['solidity_approx_2t_over_w']:.4f} &nbsp; open area = {m['open_area_ratio']:.1%}<br>"
-            f"S_ref = {m['S_ref_m2']:.3f} m2 &nbsp; mass = {m['mass_kg']:.0f} kg ({s.material})<br>"
-            f"{ok}{warn}")
+            f'<table cellspacing="0" cellpadding="1">{body}</table>{status}{warn}')
 
     def _update_fits(self, s):
         rows = fit_table(s, around=self.lay.J)
