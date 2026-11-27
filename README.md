@@ -1,5 +1,7 @@
 # gridfinModeling
 
+[![tests](https://github.com/AaronDoubert/gridfinModeling/actions/workflows/tests.yml/badge.svg)](https://github.com/AaronDoubert/gridfinModeling/actions/workflows/tests.yml)
+
 Parametric grid-fin generator: a live 2D preview GUI, a lattice solver that always meets the frame cleanly, and STEP / DXF export for CFD (Fluent Meshing) and CAD comparison.
 
 ![GUI](docs/gui.png)
@@ -89,6 +91,7 @@ gridfin/cad.py       CadQuery solids + STEP / DXF / JSON export
 gridfin/gui.py       PySide6 window
 gridfin/plot.py      matplotlib preview (GUI + CLI)
 gridfin/presets.*    stock thicknesses, materials, built-in designs
-tests/               pytest
+tests/               pytest - lattice sweep, CAD export, GUI smoke
 docs/                walkthrough, interface notes, screenshot script
+.github/workflows/   CI: pytest on every push to main and every PR
 ```
